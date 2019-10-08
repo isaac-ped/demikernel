@@ -107,6 +107,29 @@ std::unordered_map<pthread_t, latency_ptr_type> read_latencies;
 std::unordered_map<pthread_t, latency_ptr_type> write_latencies;
 static std::mutex r_latencies_mutex;
 static std::mutex w_latencies_mutex;
+
+thread_local latency_ptr_type *thread_read_latencies;
+thread_local latency_ptr_type *thread_write_latencies;
+
+static inline int record_latency(uint64_t timestamp, 
+                             latency_ptr_type **thread_latencies,
+                             std::unordered_map<pthread_t, latency_ptr_type> &latency_map,
+                             std::mutex &latency_mutex,
+                             const std::string &label,
+                             boost::chrono::duration<uint64_t, boost::nano> dt
+                             ) {
+    if (!*thread_latencies) {
+        std::lock_guard<std::mutex> lock(latency_mutex);
+        auto it = latency_map.find(pthread_self());
+        if (it == write_latencies.end()) {
+            DMTR_OK(dmtr_register_latencies(label.c_str(), latency_map));
+            it = latency_map.find(pthread_self());
+        }
+        *thread_latencies = &it->second;
+    }
+    dmtr_record_timed_latency((*thread_latencies)->get(), timestamp, dt.count());
+    return 0;
+}
 #endif
 
 #if DMTR_TRACE
@@ -769,7 +792,6 @@ int dmtr::lwip_queue::push_thread(task::thread_type::yield_type &yield, task::th
     DMTR_TRUE(EPERM, our_dpdk_port_id != boost::none);
     const uint16_t dpdk_port_id = *our_dpdk_port_id;
     pthread_t me = pthread_self();
-
     while (good()) {
         while (tq.empty()) {
             yield();
@@ -1020,17 +1042,8 @@ int dmtr::lwip_queue::push_thread(task::thread_type::yield_type &yield, task::th
 #if DMTR_PROFILE
         auto now = take_time();
         dt += (now - t0);
-        {
-            std::lock_guard<std::mutex> lock(w_latencies_mutex);
-            auto it = write_latencies.find(me);
-            if (it != write_latencies.end()) {
-                DMTR_OK(dmtr_record_timed_latency(it->second.get(), since_epoch(now), dt.count()));
-            } else {
-                DMTR_OK(dmtr_register_latencies("write", write_latencies));
-                it = write_latencies.find(me); //Not ideal but happens only once
-                DMTR_OK(dmtr_record_timed_latency(it->second.get(), since_epoch(now), dt.count()));
-            }
-        }
+        DMTR_OK(record_latency(since_epoch(now), &thread_write_latencies, write_latencies,
+                               w_latencies_mutex, "write", dt));
 #endif
 
 #if DMTR_TRACE
@@ -1209,17 +1222,8 @@ dmtr::lwip_queue::service_incoming_packets() {
     pthread_t me = pthread_self();
     auto now = take_time();
     auto dt = (now - t0);
-    {
-        std::lock_guard<std::mutex> lock(r_latencies_mutex);
-        auto it = read_latencies.find(me);
-        if (it != read_latencies.end()) {
-            DMTR_OK(dmtr_record_timed_latency(it->second.get(), since_epoch(now), dt.count()));
-        } else {
-            DMTR_OK(dmtr_register_latencies("read", read_latencies));
-            it = read_latencies.find(me);
-            DMTR_OK(dmtr_record_timed_latency(it->second.get(), since_epoch(now), dt.count()));
-        }
-    }
+    record_latency(since_epoch(now), &thread_read_latencies, read_latencies,
+                   r_latencies_mutex, "read", dt);
 #endif
 
     for (size_t i = 0; i < count; ++i) {
