@@ -56,10 +56,10 @@ int dmtr::memory_queue::push_thread(task::thread_type::yield_type &yield, task::
 }
 
 int dmtr::memory_queue::pop(dmtr_qtoken_t qt) {
-    std::lock_guard<std::recursive_mutex> lock(my_lock);
     DMTR_TRUE(EINVAL, good());
     DMTR_NOTNULL(EINVAL, my_pop_thread);
 
+    std::lock_guard<std::recursive_mutex> lock(my_lock);
     DMTR_OK(new_task(qt, DMTR_OPC_POP));
     my_pop_thread->enqueue(qt);
     return 0;
@@ -89,13 +89,15 @@ int dmtr::memory_queue::pop_thread(task::thread_type::yield_type &yield, task::t
 }
 
 int dmtr::memory_queue::poll(dmtr_qresult_t &qr_out, dmtr_qtoken_t qt) {
-    std::lock_guard<std::recursive_mutex> lock(my_lock);
 
     DMTR_OK(task::initialize_result(qr_out, qd(), qt));
     DMTR_TRUE(EINVAL, good());
 
     task *t;
-    DMTR_OK(get_task(t, qt));
+    {
+        std::lock_guard<std::recursive_mutex> lock(my_lock);
+        DMTR_OK(get_task(t, qt));
+    }
 
     int ret;
     switch (t->opcode()) {
@@ -131,7 +133,7 @@ int dmtr::memory_queue::drop(dmtr_qtoken_t qt) {
 }
 
 int dmtr::memory_queue::close() {
-    std::lock_guard<std::recursive_mutex> lock(my_lock);
+    //std::lock_guard<std::recursive_mutex> lock(my_lock);
 
     my_good_flag = false;
     return 0;
