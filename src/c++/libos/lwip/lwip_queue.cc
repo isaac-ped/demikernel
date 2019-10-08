@@ -114,6 +114,10 @@ std::unordered_map<pthread_t, trace_ptr_type> pop_token_traces;
 std::unordered_map<pthread_t, trace_ptr_type> push_token_traces;
 static std::mutex pop_token_traces_mutex;
 static std::mutex push_token_traces_mutex;
+
+thread_local trace_ptr_type *thread_pop_token_traces;
+thread_local trace_ptr_type *thread_push_token_traces;
+
 #endif
 
 const struct ether_addr dmtr::lwip_queue::ether_broadcast = {
@@ -778,17 +782,16 @@ int dmtr::lwip_queue::push_thread(task::thread_type::yield_type &yield, task::th
             .start = true,
             .timestamp = take_time()
         };
-        {
+        if (!thread_push_token_traces) {
             std::lock_guard<std::mutex> lock(push_token_traces_mutex);
             auto it = push_token_traces.find(me);
-            if (it != push_token_traces.end()) {
-                DMTR_OK(dmtr_record_trace(it->second.get(), trace));
-            } else {
+            if (it == push_token_traces.end()) {
                 DMTR_OK(dmtr_register_trace("PUSH", push_token_traces));
                 it = push_token_traces.find(me);
-                DMTR_OK(dmtr_record_trace(it->second.get(), trace));
             }
+            thread_push_token_traces = &it->second;
         }
+        DMTR_OK(dmtr_record_trace(thread_push_token_traces->get(), trace));
 #endif
         tq.pop();
         task *t;
@@ -1036,15 +1039,10 @@ int dmtr::lwip_queue::push_thread(task::thread_type::yield_type &yield, task::th
             .start = false,
             .timestamp = take_time()
         };
-        {
-            std::lock_guard<std::mutex> lock(push_token_traces_mutex);
-            auto it = push_token_traces.find(me);
-            if (it != push_token_traces.end()) {
-                DMTR_OK(dmtr_record_trace(it->second.get(), trace));
-            } else {
-                DMTR_FAIL(ENOENT);
-            }
+        if (!thread_push_token_traces) {
+            DMTR_FAIL(ENOENT);
         }
+        DMTR_OK(dmtr_record_trace(thread_push_token_traces->get(), trace));
 #endif
         DMTR_OK(t->complete(0, *sga));
     }
@@ -1096,18 +1094,17 @@ int dmtr::lwip_queue::pop_thread(task::thread_type::yield_type &yield, task::thr
         DMTR_OK(get_task(t, qt));
 
 #if DMTR_TRACE
-       trace.token = qt;
-       {
+        trace.token = qt;
+        if (!thread_pop_token_traces) {
             std::lock_guard<std::mutex> lock(pop_token_traces_mutex);
             auto it = pop_token_traces.find(me);
-            if (it != pop_token_traces.end()) {
-                DMTR_OK(dmtr_record_trace(it->second.get(), trace));
-            } else {
+            if (it == pop_token_traces.end()) {
                 DMTR_OK(dmtr_register_trace("POP", pop_token_traces));
                 it = pop_token_traces.find(me);
-                DMTR_OK(dmtr_record_trace(it->second.get(), trace));
             }
+            thread_pop_token_traces = &it->second;
         }
+        DMTR_OK(dmtr_record_trace(thread_pop_token_traces->get(), trace));
 #endif
         dmtr_sgarray_t &sga = my_recv_queue.front();
         // Closing our fac-simile connection
@@ -1133,13 +1130,10 @@ int dmtr::lwip_queue::pop_thread(task::thread_type::yield_type &yield, task::thr
             .timestamp = take_time()
         };
         {
-            std::lock_guard<std::mutex> lock(pop_token_traces_mutex);
-            auto it = pop_token_traces.find(me);
-            if (it != pop_token_traces.end()) {
-                DMTR_OK(dmtr_record_trace(it->second.get(), trace));
-            } else {
+            if (!thread_pop_token_traces) {
                 DMTR_FAIL(ENOENT);
             }
+            DMTR_OK(dmtr_record_trace(thread_pop_token_traces->get(), trace));
         }
 #endif
     }
