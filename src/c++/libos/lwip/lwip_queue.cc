@@ -74,7 +74,7 @@ namespace bpo = boost::program_options;
 #define IP_VHL_DEF (IP_VERSION | IP_HDRLEN)
 //#define DMTR_DEBUG 1
 #define DMTR_TRACE 1
-//#define DMTR_PROFILE 1
+#define DMTR_PROFILE 1
 #define TIME_ZEUS_LWIP 1
 
 /*
@@ -1070,18 +1070,34 @@ int dmtr::lwip_queue::pop_thread(task::thread_type::yield_type &yield, task::thr
     pthread_t me = pthread_self();
 
     while (good()) {
+        while (my_recv_queue.empty()) {
+            if (service_incoming_packets() == EAGAIN ||
+                my_recv_queue.empty())
+                yield();
+        }
+
+#if DMTR_TRACE
+        dmtr_qtoken_trace_t trace = {
+            .token = 0,
+            .start = true,
+            .timestamp = take_time()
+        };
+
+#endif
+
         while (tq.empty()) {
             yield();
         }
 
         auto qt = tq.front();
+        tq.pop();
+
+        task *t;
+        DMTR_OK(get_task(t, qt));
+
 #if DMTR_TRACE
-        dmtr_qtoken_trace_t trace = {
-            .token = qt,
-            .start = true,
-            .timestamp = take_time()
-        };
-        {
+       trace.token = qt;
+       {
             std::lock_guard<std::mutex> lock(pop_token_traces_mutex);
             auto it = pop_token_traces.find(me);
             if (it != pop_token_traces.end()) {
@@ -1093,16 +1109,6 @@ int dmtr::lwip_queue::pop_thread(task::thread_type::yield_type &yield, task::thr
             }
         }
 #endif
-        tq.pop();
-        task *t;
-        DMTR_OK(get_task(t, qt));
-
-        while (my_recv_queue.empty()) {
-            if (service_incoming_packets() == EAGAIN ||
-                my_recv_queue.empty())
-                yield();
-        }
-
         dmtr_sgarray_t &sga = my_recv_queue.front();
         // Closing our fac-simile connection
         if (sga.sga_numsegs == 0xdeadbeef) {
