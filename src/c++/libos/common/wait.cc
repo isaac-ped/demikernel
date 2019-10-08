@@ -22,6 +22,8 @@
 #if DMTR_PROFILE
 static std::unordered_map<pthread_t, latency_ptr_type> success_poll_latencies;
 std::mutex poll_latencies_mutex;
+
+thread_local latency_ptr_type *thread_poll_latencies;
 #endif
 
 int dmtr_wait(dmtr_qresult_t *qr_out, dmtr_qtoken_t qt) {
@@ -51,18 +53,17 @@ int dmtr_wait_any(dmtr_qresult_t *qr_out, int *start_offset, int *ready_offset, 
 #if DMTR_PROFILE
                     auto now = take_time();
                     auto dt = now - t0;
-                    pthread_t me = pthread_self();
-                    {
+                    if (!thread_poll_latencies) {
+                        pthread_t me = pthread_self();
                         std::lock_guard<std::mutex> lock(poll_latencies_mutex);
                         auto it = success_poll_latencies.find(me);
-                        if (it != success_poll_latencies.end()) {
-                            DMTR_OK(dmtr_record_timed_latency(it->second.get(), since_epoch(now), dt.count()));
-                        } else {
+                        if (it == success_poll_latencies.end()) {
                             DMTR_OK(dmtr_register_latencies("poll", success_poll_latencies));
                             it = success_poll_latencies.find(me);
-                            DMTR_OK(dmtr_record_timed_latency(it->second.get(), since_epoch(now), dt.count()));
                         }
+                        thread_poll_latencies = &it->second;
                     }
+                    DMTR_OK(dmtr_record_timed_latency(thread_poll_latencies->get(), since_epoch(now), dt.count()));
 #endif
                     if (ready_offset != NULL) {
                         *ready_offset = i;
