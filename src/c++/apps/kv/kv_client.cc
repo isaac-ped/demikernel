@@ -226,6 +226,12 @@ int main (int argc, char *argv[]) {
     log_info("Done with all of %d requests", sent_requests);
 
 #ifdef DMTR_TRACE
+    std::string info_file = opts.common.log_dir + "/info";
+    FILE *f1 = fopen(info_file.c_str(), "w");
+    if (f1) {
+        fprintf(f1, "%lu", requests.size());
+        fclose(f1);
+    }
     std::string trace_file = opts.common.log_dir + "/traces";
     FILE *f = fopen(trace_file.c_str(), "w");
     if (f) {
