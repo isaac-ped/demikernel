@@ -242,7 +242,7 @@ int main (int argc, char *argv[]) {
     }
 
     std::vector<std::unique_ptr<ClientRequest>> filtered_reqs;
-    sample_into(requests, filtered_reqs, req_latency_sorter, req_time_sorter, 10000);
+    sample_into(requests, filtered_reqs, req_latency_sorter, req_time_sorter, 100000);
 
     for (auto &req: filtered_reqs) {
         fprintf(

@@ -49,7 +49,7 @@ void to_request_times(std::vector<hr_clock::time_point> entries,
     for (unsigned int i=0; i < entries.size(); i++) {
         tmp.emplace_back(i, entries[i], exits[i]);
     }
-    sample_into(tmp, out, lat_cmp, time_cmp, 10000);
+    sample_into(tmp, out, lat_cmp, time_cmp, 100000);
 }
 
 struct KvRequest {
