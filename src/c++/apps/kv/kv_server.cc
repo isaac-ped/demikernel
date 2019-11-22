@@ -44,7 +44,7 @@ bool time_cmp(const RequestTimes &a, const RequestTimes &b) {
 
 void to_request_times(std::vector<hr_clock::time_point> entries, 
                       std::vector<hr_clock::time_point> exits,
-                      std::vector<RequestTimes> out) {
+                      std::vector<RequestTimes> &out) {
     std::vector<RequestTimes> tmp;
     for (unsigned int i=0; i < entries.size(); i++) {
         tmp.emplace_back(i, entries[i], exits[i]);
