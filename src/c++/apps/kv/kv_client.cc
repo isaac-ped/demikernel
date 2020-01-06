@@ -29,12 +29,12 @@ class ClientRequest {
     public: dmtr_qtoken_t pop_token; /** The token associated with reading the response */
 #endif
     public: bool valid; /** Whether the response was valid */
-    public: const char * req; /** The actual request */
+    public: std::string req; /** The actual request */
     public: size_t req_size; /** Number of Bytes in the request */
     public: int conn_qd; /** The connection's queue descriptor */
     public: uint32_t id; /** Request id */
 
-    public: ClientRequest(const char * req, size_t req_size, uint32_t id): req(req), req_size(req_size), id(id) {}
+    public: ClientRequest(std::string req, size_t req_size, uint32_t id): req(req), req_size(req_size), id(id) {}
     public: ~ClientRequest() {}
 };
 
@@ -90,7 +90,7 @@ int parse_client_args(int argc, char **argv, ClientOpts &options) {
 
 std::unique_ptr<ClientRequest> send_request(PspServiceUnit &su, int qfd, std::string request_str, int id) {
     dmtr_sgarray_t sga;
-    auto cr = std::make_unique<ClientRequest>(request_str.c_str(), request_str.size(), id);
+    auto cr = std::make_unique<ClientRequest>(request_str, request_str.size(), id);
     sga.sga_numsegs = 1;
     sga.sga_segs[0].sgaseg_len = request_str.size();
     sga.sga_segs[0].sgaseg_buf = const_cast<void *>(static_cast<const void *>(request_str.c_str()));
@@ -198,6 +198,7 @@ int main (int argc, char *argv[]) {
 
         ClientRequest &resp_cr = *requests[resp_idx++];
 
+
         /* Wait for an answer */
         DMTR_OK(su.ioqapi.pop(token, qfd));
 #ifdef DMTR_TRACE
@@ -235,7 +236,7 @@ int main (int argc, char *argv[]) {
     std::string trace_file = opts.common.log_dir + "/traces";
     FILE *f = fopen(trace_file.c_str(), "w");
     if (f) {
-        fprintf(f, "REQ_ID\tSENDING\tREADING\tCOMPLETED\tPUSH_TOKEN\tPOP_TOKEN\n");
+        fprintf(f, "REQ_ID\tREQ\tSENDING\tREADING\tCOMPLETED\tPUSH_TOKEN\tPOP_TOKEN\n");
     } else {
         log_error("Could not open log file!!");
         return 1;
@@ -245,9 +246,11 @@ int main (int argc, char *argv[]) {
     sample_into(requests, filtered_reqs, req_latency_sorter, req_time_sorter, 100000);
 
     for (auto &req: filtered_reqs) {
+        char *req_str = strchr(const_cast<char*>(req->req.c_str()), ' ');
         fprintf(
-            f, "%d\t%lu\t%lu\t%lu\t%lu\t%lu\n",
+            f, "%d\t%s\t%lu\t%lu\t%lu\t%lu\t%lu\n",
             req->id,
+            req_str,
             since_epoch(req->sending),
             since_epoch(req->reading),
             since_epoch(req->completed),
